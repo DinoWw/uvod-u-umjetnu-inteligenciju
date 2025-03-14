@@ -126,7 +126,8 @@ def parseInputDataFromFile(filename: str) -> Tuple[str, List[str], Dict[str, Lis
    f.close()
    return startState, goalStates, transitions
 
-def enumerateStates(startStateStr: str, goalStatesStr: List[str], transitionsStr: Dict[str,List[StrTranstion]]) -> Tuple[NodeCode, List[NodeCode], Dict[NodeCode,List[Transtion]], Dict[NodeCode, str], Dict[str, NodeCode]]:
+def enumerateStates(startStateStr: str, goalStatesStr: List[str], transitionsStr: Dict[str,List[StrTranstion]]) \
+   -> Tuple[NodeCode, List[NodeCode], Dict[NodeCode,List[Transtion]], Dict[NodeCode, str], Dict[str, NodeCode]]:
 
    # collect states
    states: Set[str] = set()
