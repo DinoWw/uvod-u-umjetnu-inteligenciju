@@ -1,19 +1,19 @@
 import argparse
 from io import TextIOWrapper
-from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
-   
    
 
 NodeCode = int
-# Node = dict[str,NodeCode]#dict{"code":NodeCode, "parent":Node}
 
-class Node:
+class BfsNode(NamedTuple):
    code: NodeCode
-   parent: 'Optional[Node]'
-   def __init__(self, code_: NodeCode, parent_: 'Optional[Node]'): 
-      self.code = code_
-      self.parent = parent_
+   parent: 'Optional[BfsNode]'
+
+class UcsNode(NamedTuple):
+   code: NodeCode
+   parent: 'Optional[UcsNode]'
+   cost: float
 
 class Transtion(NamedTuple):
    stateTo: NodeCode
@@ -24,25 +24,78 @@ class StrTranstion(NamedTuple):
    cost: int
 
 
-visitQueue: List[Node] = []
-notedNodes: Set[NodeCode] = set()
-def bfs(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool]) -> Optional[Node]:
+
+def bfs(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool]) -> Tuple[Optional[BfsNode], int]:
+   visitQueue: List[BfsNode] = []
+   notedNodes: Set[NodeCode] = set()
+   statesVisited: int = 0
+
+   def planToVisit(node: BfsNode):
+      visitQueue.append(node)
+      notedNodes.add(node.code)
+   
    # add start to visitqueue
-   visitQueue.append(Node(start, None))
+   planToVisit(BfsNode(start, None))
    
    while(len(visitQueue) != 0):
       # dequeue
-      node = visitQueue.pop(0)   
+      node = visitQueue.pop(0)
+      statesVisited += 1
       # check if goal met
       if(goal(node.code)):
-         return node   
-      # note dequeueued node
-      notedNodes.add(node.code)
+         return node, statesVisited
       # queue all neighbors except already noted ones and set parents
       for next in trans[node.code]:
          if (next.stateTo in notedNodes):
             continue
-         visitQueue.append(Node(next.stateTo, node))
+         planToVisit(BfsNode(next.stateTo, node))
+      # print("visitQ", [node.code for node in visitQueue])
+   
+   return None, statesVisited
+
+
+def insertSorted(el:UcsNode, arr:List[UcsNode]):
+   i = 0
+   for i in range(len(arr)):
+      if( arr[i].cost > el.cost 
+         or ( arr[i].cost == el.cost and arr[i].code > el.code ) ):
+         arr.insert(i, el)
+         return
+   arr.append(el)
+   
+
+
+def ucs(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool]) -> Tuple[Optional[UcsNode], int]:
+   visitQueue: List[UcsNode] = []
+   notedNodes: Set[NodeCode] = set()
+   statesVisited: int = 0
+
+   bestNode: Optional[UcsNode] = None
+
+   def planToVisit(node: UcsNode):
+      insertSorted(node, visitQueue)
+      # notedNodes.add(node.code)
+   
+   # add start to visitqueue
+   planToVisit(UcsNode(start, None, 0))
+   
+   while(len(visitQueue) != 0):
+      # dequeue
+      node = visitQueue.pop(0)
+      statesVisited += 1
+      # check if goal met
+      if(goal(node.code) and ( bestNode is None or bestNode.cost <= node.cost )):
+         bestNode = node
+         return bestNode, statesVisited
+         continue
+      # queue all neighbors except already noted ones and set parents
+      for next in trans[node.code]:
+         if (next.stateTo in notedNodes):
+            continue
+         planToVisit(UcsNode(next.stateTo, node, node.cost + next.cost))
+      # print("visitQ", [node.code for node in visitQueue])
+   
+   return bestNode, statesVisited
          
 
 def loadNextLine(buffer: TextIOWrapper) -> str:
@@ -70,9 +123,10 @@ def parseInputDataFromFile(filename: str) -> Tuple[str, List[str], Dict[str, Lis
          pair = strTransition.split(",")
          transitions[p[0]].append( StrTranstion( pair[0], int(pair[1]) ) )
 
+   f.close()
    return startState, goalStates, transitions
 
-def enumerateStates(startStateStr: str, goalStatesStr: List[str], transitionsStr: Dict[str,List[StrTranstion]]) -> Tuple[NodeCode, List[NodeCode], Dict[NodeCode,List[Transtion]], Dict[NodeCode, str]]:
+def enumerateStates(startStateStr: str, goalStatesStr: List[str], transitionsStr: Dict[str,List[StrTranstion]]) -> Tuple[NodeCode, List[NodeCode], Dict[NodeCode,List[Transtion]], Dict[NodeCode, str], Dict[str, NodeCode]]:
 
    # collect states
    states: Set[str] = set()
@@ -99,10 +153,12 @@ def enumerateStates(startStateStr: str, goalStatesStr: List[str], transitionsStr
    # regenerate transitions
    nodeTransitions: Dict[NodeCode,List[Transtion]] = {}
    for stateFrom, nexts in transitionsStr.items():
-      nodeTransitions[stateDict[stateFrom]] = [Transtion( stateDict[next.stateTo], next.cost ) for next in nexts]
+      def sortF(t: Transtion) -> int:
+         return t.stateTo
+      nodeTransitions[stateDict[stateFrom]] = sorted([Transtion( stateDict[next.stateTo], next.cost ) for next in nexts], key=sortF)
 
    # return 
-   return stateDict[startStateStr], [stateDict[state] for state in goalStatesStr], nodeTransitions, lookupDict
+   return stateDict[startStateStr], [stateDict[state] for state in goalStatesStr], nodeTransitions, lookupDict, stateDict
 
 def goalFunctionGenerator(goalStates: List[NodeCode]):
    def goalFunction(code: NodeCode) -> bool:
@@ -110,14 +166,36 @@ def goalFunctionGenerator(goalStates: List[NodeCode]):
    
    return goalFunction
 
-def getPathTo(node: Optional[Node]) -> List[Node]:
-   nodeList: List[Node] = []
+def getPathTo(node: Optional[Union[BfsNode, UcsNode]]) -> List[Union[BfsNode, UcsNode]]:
+   nodeList: List[Union[BfsNode, UcsNode]] = []
    while(node is not None):
       nodeList.append(node)
       node = node.parent
    nodeList.reverse()
    return nodeList
 
+def parseHeuristicFromFile(filename: str) -> Dict[str, float]:
+   f = open(filename)
+
+   heuristicStr: Dict[str, float] = {}
+
+   while True :
+      line = loadNextLine(f).strip(" \n")
+      if (line == ""):
+         break
+      p = line.split(": ")
+      heuristicStr[p[0]] = int(p[1])
+
+   f.close()
+   return heuristicStr
+
+def enumerateHeuristic(heuristicStr: Dict[str, float], strToNodeCode: Dict[str, NodeCode]) -> Dict[NodeCode, float]:
+   heuristic: Dict[NodeCode, float] = {}
+
+   for node, weight in heuristicStr.items():
+      heuristic[strToNodeCode[node]] = weight
+
+   return heuristic
 
 if __name__ == "__main__":
       
@@ -132,29 +210,47 @@ if __name__ == "__main__":
    parser.add_argument("--check-optimistic", action="store_true", help="zastavica koja signalizira da se za danu heuristiku zeli provjeriti konzistentnost")
 
    flags = parser.parse_args()
+
+
+   startStateStr, goalStatesStr, transitionsStr = parseInputDataFromFile(flags.ss)
+   startState, goalStates, transitions, lookupTable, reverseLookupTable = enumerateStates(startStateStr, goalStatesStr, transitionsStr)
+   goalFunction = goalFunctionGenerator(goalStates)
    
    if(flags.alg == "bfs"):
-      startStateStr, goalStatesStr, transitionsStr = parseInputDataFromFile(flags.ss)
-      startState, goalStates, transitions, lookupTable = enumerateStates(startStateStr, goalStatesStr, transitionsStr)
       
-      # print(startStateStr)
-      # print(startState)
-      # print(goalStatesStr)
+      endNode, statesVisited = bfs(startState, transitions, goalFunction)
+
+      # if(endNode is None):
+      #    pass
+      
+      # print(lookupTable[startState])
       # print(goalStates)
-      # print(transitionsStr)
-      # print(transitions)
-      # print(lookupTable)
 
-      # TODO: sort list of statesTo in transtions if need be
+      path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
-      goalFunction = goalFunctionGenerator(goalStates)
-      
-      endNode = bfs(startState, transitions, goalFunction)
+      print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
+      print(f"[STATES_VISITED]: {statesVisited}")
+      print(f"[PATH_LENGTH]: {len(path)}")
+      print(f"[TOTAL_COST]: {float(-1)}")
+      print(f"[PATH]: {path[0]}", end='')
+      for i in range(1, len(path)):
+         print(f" => {path[i]}", end="")
+      print()
+   
+   elif(flags.alg == "ucs"):
+      # heuristicStr: Dict[str, float] = parseHeuristicFromFile(flags.h)
+      # heuristic: Dict[NodeCode, float] = enumerateHeuristic(heuristicStr, reverseLookupTable)
 
-      if(endNode is None):
-         pass
-      
-      print(lookupTable[startState])
-      print(goalStates)
-      print([lookupTable[node.code] for node in getPathTo(endNode)])
-      
+      endNode, statesVisited = ucs(startState, transitions, goalFunction)
+
+      path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
+
+      print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
+      print(f"[STATES_VISITED]: {statesVisited}")
+      print(f"[PATH_LENGTH]: {len(path)}")
+      print(f"[TOTAL_COST]: { float( endNode.cost if endNode is not None else -1 ) }")
+      print(f"[PATH]: {path[0]}", end='')
+      for i in range(1, len(path)):
+         print(f" => {path[i]}", end="")
+      print()
+
