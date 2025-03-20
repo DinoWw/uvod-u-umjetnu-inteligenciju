@@ -1,5 +1,4 @@
 import argparse
-import code
 from io import TextIOWrapper
 from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
@@ -231,6 +230,17 @@ def parseHeuristicFromFile(filename: str) -> Dict[str, float]:
    f.close()
    return heuristicStr
 
+def printOutput(endNode: Union[None, BfsNode, UcsNode], statesVisited: int, path: List[str], cost: float):
+   print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
+   print(f"[STATES_VISITED]: {statesVisited}")
+   print(f"[PATH_LENGTH]: {len(path)}")
+   print(f"[TOTAL_COST]: {float(cost)}")
+   print(f"[PATH]: {path[0]}", end='')
+   for i in range(1, len(path)):
+      print(f" => {path[i]}", end="")
+   print()
+
+
 def enumerateHeuristic(heuristicStr: Dict[str, float], strToNodeCode: Dict[str, NodeCode]) -> Dict[NodeCode, float]:
    heuristic: Dict[NodeCode, float] = {}
 
@@ -270,14 +280,8 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
-      print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
-      print(f"[STATES_VISITED]: {statesVisited}")
-      print(f"[PATH_LENGTH]: {len(path)}")
-      print(f"[TOTAL_COST]: {float(-1)}")
-      print(f"[PATH]: {path[0]}", end='')
-      for i in range(1, len(path)):
-         print(f" => {path[i]}", end="")
-      print()
+      printOutput(endNode, statesVisited, path, float(-1))
+
    
    elif(flags.alg == "ucs"):
 
@@ -285,14 +289,8 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
-      print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
-      print(f"[STATES_VISITED]: {statesVisited}")
-      print(f"[PATH_LENGTH]: {len(path)}")
-      print(f"[TOTAL_COST]: { float( endNode.cost if endNode is not None else -1 ) }")
-      print(f"[PATH]: {path[0]}", end='')
-      for i in range(1, len(path)):
-         print(f" => {path[i]}", end="")
-      print()
+      printOutput(endNode, statesVisited, path, float( endNode.cost if endNode is not None else -1 ))
+
    elif(flags.alg == "astar"):
       heuristicStr: Dict[str, float] = parseHeuristicFromFile(flags.h)
       heuristic: Dict[NodeCode, float] = enumerateHeuristic(heuristicStr, reverseLookupTable)
@@ -301,12 +299,8 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
-      print(f"[FOUND_SOLUTION]: {'yes' if endNode is not None else 'no'}")
-      print(f"[STATES_VISITED]: {statesVisited}")
-      print(f"[PATH_LENGTH]: {len(path)}")
-      print(f"[TOTAL_COST]: { float( endNode.cost if endNode is not None else -1 ) }")
-      print(f"[PATH]: {path[0]}", end='')
-      for i in range(1, len(path)):
-         print(f" => {path[i]}", end="")
-      print()
+      printOutput(endNode, statesVisited, path, float( endNode.cost if endNode is not None else -1 ))
+
+
+
 
