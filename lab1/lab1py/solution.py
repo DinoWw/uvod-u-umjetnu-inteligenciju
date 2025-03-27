@@ -249,6 +249,97 @@ def enumerateHeuristic(heuristicStr: Dict[str, float], strToNodeCode: Dict[str, 
 
    return heuristic
 
+
+def checkConsistent(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool], heuristic: Dict[NodeCode, float], stateLookup: Dict[NodeCode, str])-> bool:
+   isConsistent = True
+   for state1, transitionList in transitions.items():
+      for transition in transitionList:
+         h1 = heuristic[state1]
+         state2 = transition.stateTo
+         h2 = heuristic[state2]
+         c = transition.cost
+         ok = h1 <= h2 + c
+         isConsistent = isConsistent and ok
+         print(f"[CONDITION]: [{'OK' if ok else 'ERR'}] h({stateLookup[state1]}) <= h({stateLookup[state2]}) + c: {float(h1)} <= {float(h2)} + {float(c)}")
+   return isConsistent
+
+def checkOptimal(trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool], heuristic: Dict[NodeCode, float], stateLookup: Dict[NodeCode, str])-> bool:
+   
+   allNodes:List[NodeCode] = list(trans.keys())
+   idealHeuristic: Dict[NodeCode, float] = dict()
+
+   for startNode in allNodes:
+      if startNode in idealHeuristic:
+         continue
+
+      # ASTAR with h(*) = 0
+      visitQueue: List[UcsNode] = []
+      minCost: Dict[NodeCode, float] = dict()
+      notedNodes: Set[NodeCode] = set()
+      statesVisited: int = 0
+
+
+      def planToVisit(node: UcsNode) -> None:
+         err = insertSortedAstar(node, visitQueue, heuristic)
+         if(not err) :
+            minCost[node.code] = node.cost
+         notedNodes.add(node.code)
+      
+      # add start to visitqueue
+      planToVisit(UcsNode(start, None, 0))
+      
+      while(len(visitQueue) != 0):
+         # dequeue
+         node = visitQueue.pop(0)
+         statesVisited += 1
+         # check if goal met
+         if(goal(node.code)):
+            return node, statesVisited
+         # queue all neighbors except already noted ones and set parents
+         for next in trans[node.code]:
+            if (next.stateTo in notedNodes and minCost[next.stateTo] < node.cost + next.cost):
+               continue
+            planToVisit(UcsNode(next.stateTo, node, node.cost + next.cost))
+         # print("visitQ", [node.code for node in visitQueue])
+      
+      # BFS, noting costs
+      visitQueue: List[UcsNode] = []
+      notedNodes: Set[NodeCode] = set()
+
+      def planToVisit(node: UcsNode):
+         visitQueue.append(node)
+         notedNodes.add(node.code)
+      
+      # add start to visitqueue
+      planToVisit(UcsNode(startNode, None, 0))
+      
+      while(len(visitQueue) != 0):
+         # dequeue
+         node = visitQueue.pop(0)
+         # check if goal met
+         if(goal(node.code)):
+            path = getPathTo(node)
+            for pathNode in path:
+               idealHeuristic[pathNode.code] = node.cost - pathNode.cost    # type: ignore
+            break
+         if(node.code in idealHeuristic):
+            path = getPathTo(node)
+            for pathNode in path:
+               idealHeuristic[pathNode.code] = idealHeuristic[node.code] - pathNode.cost    # type: ignore
+            break
+         # queue all neighbors except already noted ones and set parents
+         for next in trans[node.code]:
+            if (next.stateTo in notedNodes):
+               continue
+            planToVisit(UcsNode(next.stateTo, node, next.cost + node.cost))
+         # print("visitQ", [node.code for node in visitQueue])
+   
+   print(idealHeuristic)
+      
+
+
+
+
 if __name__ == "__main__":
       
 
@@ -280,6 +371,7 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
+      print("# BFS")
       printOutput(endNode, statesVisited, path, float(-1))
 
    
@@ -289,6 +381,7 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
+      print("# UCS")
       printOutput(endNode, statesVisited, path, float( endNode.cost if endNode is not None else -1 ))
 
    elif(flags.alg == "astar"):
@@ -299,8 +392,29 @@ if __name__ == "__main__":
 
       path: List[str] = [lookupTable[node.code] for node in getPathTo(endNode)]
 
+      print(f"# A-STAR {flags.h}")
       printOutput(endNode, statesVisited, path, float( endNode.cost if endNode is not None else -1 ))
 
+
+   if(flags.check_consistent):
+      heuristicStr: Dict[str, float] = parseHeuristicFromFile(flags.h)
+      heuristic: Dict[NodeCode, float] = enumerateHeuristic(heuristicStr, reverseLookupTable)
+
+      print(f"# HEURISTIC-CONSISTENT {flags.h}")
+
+      isConsistent = checkConsistent(startState, transitions, goalFunction, heuristic, lookupTable)
+
+      print(f"[CONCLUSION]: Heuristic is {'' if isConsistent else 'not '}consistent.")
+   
+   elif(flags.check_optimistic):
+      heuristicStr: Dict[str, float] = parseHeuristicFromFile(flags.h)
+      heuristic: Dict[NodeCode, float] = enumerateHeuristic(heuristicStr, reverseLookupTable)
+
+      print(f"# HEURISTIC-OPTIMAL {flags.h}")
+
+      isOptimal = checkOptimal(transitions, goalFunction, heuristic, lookupTable)
+
+      print(f"[CONCLUSION]: Heuristic is {'' if isOptimal else 'not '}optimal.")
 
 
 
