@@ -1,5 +1,9 @@
 import argparse
+from csv import Error
+from heapq import *
 from io import TextIOWrapper
+from operator import contains
+from tracemalloc import start
 from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
    
@@ -14,6 +18,8 @@ class UcsNode(NamedTuple):
    code: NodeCode
    parent: 'Optional[UcsNode]'
    cost: float
+   def __lt__(self, other: 'tuple[NodeCode | UcsNode | float | None, ...]') -> bool:
+      return self.cost < other.cost
 
 class Transtion(NamedTuple):
    stateTo: NodeCode
@@ -71,7 +77,7 @@ def ucs(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[
    statesVisited: int = 0
 
    def planToVisit(node: UcsNode):
-      insertSortedUcs(node, visitQueue)
+      heappush(visitQueue, node)
       # notedNodes.add(node.code)
    
    # add start to visitqueue
@@ -79,7 +85,7 @@ def ucs(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal: Callable[[
    
    while(len(visitQueue) != 0):
       # dequeue
-      node = visitQueue.pop(0)
+      node = heappop(visitQueue)
       statesVisited += 1
       # check if goal met
       if(goal(node.code)):
@@ -263,79 +269,51 @@ def checkConsistent(start: NodeCode, trans: Dict[NodeCode,List[Transtion]], goal
          print(f"[CONDITION]: [{'OK' if ok else 'ERR'}] h({stateLookup[state1]}) <= h({stateLookup[state2]}) + c: {float(h1)} <= {float(h2)} + {float(c)}")
    return isConsistent
 
-def checkOptimal(trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool], heuristic: Dict[NodeCode, float], stateLookup: Dict[NodeCode, str])-> bool:
+def checkOptimistic(trans: Dict[NodeCode,List[Transtion]], goal: Callable[[NodeCode],bool], heuristic: Dict[NodeCode, float], stateLookup: Dict[NodeCode, str])-> bool:
    
    allNodes:List[NodeCode] = list(trans.keys())
    idealHeuristic: Dict[NodeCode, float] = dict()
-
-   for startNode in allNodes:
-      if startNode in idealHeuristic:
-         continue
-
-      # ASTAR with h(*) = 0
-      visitQueue: List[UcsNode] = []
-      minCost: Dict[NodeCode, float] = dict()
-      notedNodes: Set[NodeCode] = set()
-      statesVisited: int = 0
-
-
-      def planToVisit(node: UcsNode) -> None:
-         err = insertSortedAstar(node, visitQueue, heuristic)
-         if(not err) :
-            minCost[node.code] = node.cost
-         notedNodes.add(node.code)
-      
-      # add start to visitqueue
-      planToVisit(UcsNode(start, None, 0))
-      
-      while(len(visitQueue) != 0):
-         # dequeue
-         node = visitQueue.pop(0)
-         statesVisited += 1
-         # check if goal met
-         if(goal(node.code)):
-            return node, statesVisited
-         # queue all neighbors except already noted ones and set parents
-         for next in trans[node.code]:
-            if (next.stateTo in notedNodes and minCost[next.stateTo] < node.cost + next.cost):
-               continue
-            planToVisit(UcsNode(next.stateTo, node, node.cost + next.cost))
-         # print("visitQ", [node.code for node in visitQueue])
-      
-      # BFS, noting costs
-      visitQueue: List[UcsNode] = []
-      notedNodes: Set[NodeCode] = set()
-
-      def planToVisit(node: UcsNode):
-         visitQueue.append(node)
-         notedNodes.add(node.code)
-      
-      # add start to visitqueue
-      planToVisit(UcsNode(startNode, None, 0))
-      
-      while(len(visitQueue) != 0):
-         # dequeue
-         node = visitQueue.pop(0)
-         # check if goal met
-         if(goal(node.code)):
-            path = getPathTo(node)
-            for pathNode in path:
-               idealHeuristic[pathNode.code] = node.cost - pathNode.cost    # type: ignore
-            break
-         if(node.code in idealHeuristic):
-            path = getPathTo(node)
-            for pathNode in path:
-               idealHeuristic[pathNode.code] = idealHeuristic[node.code] - pathNode.cost    # type: ignore
-            break
-         # queue all neighbors except already noted ones and set parents
-         for next in trans[node.code]:
-            if (next.stateTo in notedNodes):
-               continue
-            planToVisit(UcsNode(next.stateTo, node, next.cost + node.cost))
-         # print("visitQ", [node.code for node in visitQueue])
    
-   print(idealHeuristic)
+   for startNode in allNodes:
+      # UCS 
+      endNode, _ = ucs(startNode, trans, goal)
+
+      if( endNode is None ):
+         print("Error()")
+         break
+
+      idealHeuristic[startNode] = endNode.cost
+
+   # for startNode in allNodes:
+   #    if(goal(startNode)):
+   #       idealHeuristic[startNode] = 0
+   #    if startNode in idealHeuristic:
+   #       continue
+
+   #    # UCS 
+   #    endNode, _ = ucs(startNode, trans, goalF)
+
+   #    if( endNode is None):
+   #       print("Error()")
+   #       break
+
+   #    path: List[UcsNode] = getPathTo(endNode)   # type: ignore
+
+   #    if(endNode.code not in idealHeuristic) :
+   #       idealHeuristic[endNode.code] = 0
+
+   #    for pathNode in path:
+   #       idealHeuristic[pathNode.code] = endNode.cost - pathNode.cost + idealHeuristic[endNode.code]
+   #       goalNodes.add(pathNode.code)
+
+   allGood = True
+   for node, h1 in heuristic.items():
+      h2 = idealHeuristic[node]
+      ok = h1 <= h2
+      allGood = allGood and ok
+      print(f"[CONDITION]: [{'OK' if ok else 'ERR'}] h({stateLookup[node]}) <= h*: {float(h1)} <= {float(h2)}")
       
+   return allGood
 
 
 
@@ -410,11 +388,11 @@ if __name__ == "__main__":
       heuristicStr: Dict[str, float] = parseHeuristicFromFile(flags.h)
       heuristic: Dict[NodeCode, float] = enumerateHeuristic(heuristicStr, reverseLookupTable)
 
-      print(f"# HEURISTIC-OPTIMAL {flags.h}")
+      print(f"# HEURISTIC-OPTIMISTIC {flags.h}")
 
-      isOptimal = checkOptimal(transitions, goalFunction, heuristic, lookupTable)
+      isOptimistic = checkOptimistic(transitions, goalFunction, heuristic, lookupTable)
 
-      print(f"[CONCLUSION]: Heuristic is {'' if isOptimal else 'not '}optimal.")
+      print(f"[CONCLUSION]: Heuristic is {'' if isOptimistic else 'not '}optimistic.")
 
 
 
