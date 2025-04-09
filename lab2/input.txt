@@ -1,0 +1,5 @@
+a v b v c v d
+~a v e v b v d
+~a
+a
+~c
