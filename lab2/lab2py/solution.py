@@ -130,7 +130,7 @@ def hideRedundants(c1: Clause, clauses: List[Clause]):
 bannedClauses: Set[int] = set()
 def hideClause(id: int):
     bannedClauses.add(id)
-    for i, clauses in freeCombs.items():
+    for i, clauses in list(freeCombs.items()):
         if(id in clauses):
             clauses.remove(id)
             if(len(clauses) == 0):
@@ -154,6 +154,7 @@ def pickClauses(original: List[Clause], sos: List[Clause]):
         ca = original[index2]
     else:
         ca = sos[index2 - len(original)]
+    
     return ca, sos[index1 - len(original)]
     
 
@@ -164,6 +165,9 @@ def main() :
     if (len(sys.argv) != 3):
         raise ValueError("supply alg and filename as arguments")
     alg = sys.argv[1]
+    if (alg == "cooking"):
+        raise ValueError("unimplemented: cooking")
+    
     filename = sys.argv[2]
     
     clauses: List[Clause] = parseInputData(filename)
@@ -204,6 +208,7 @@ def main() :
             
             ## maknuti taut
             if(isTautology(r)):
+                hideClause(len(clauses) + len(sos) + i)
                 res.pop(i)
                 continue
 
