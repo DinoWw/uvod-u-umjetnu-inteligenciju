@@ -1,7 +1,6 @@
 import sys
 from collections import defaultdict
 from functools import reduce
-from operator import index
 import random
 from typing import Dict, List, NamedTuple, Set
 
@@ -43,7 +42,7 @@ def createClause(clause: CNF, parents: List[int]):
     clauseCounter += 1
 
     ## keep freeCombs up to date
-    freeCombs[newClause.id] = {i for i in range(0, newClause.id)}
+    freeCombs[newClause.id] = {i for i in range(0, newClause.id) if i not in bannedClauses}
 
     return newClause
 
@@ -103,18 +102,47 @@ def printClause(clause: Clause):
     clauseList = list(clause.clause)
     print(f"{clause.id}. {clauseList[0]}{reduce(lambda s, l : s + ' v ' + formatLiteral(l), clauseList[1:], '')} {clause.parents}")
 
+def clauseStr(clause: Clause) -> str:
+    clauseList = list(clause.clause)
+    return f"{clauseList[0]}{reduce(lambda s, l : s + ' v ' + formatLiteral(l), clauseList[1:], '')}"
+
 def formatLiteral(literal: Literal):
     return f"{'~' if literal.negated else ''}{literal.name}"
 
 def isNil(clause: CNF):
     return len( clause ) == 0
 
+def isContainedIn(c1: Clause, c2: Clause) -> bool:
+    return c1.clause.issubset(c2.clause)
 
-pickedPairs: Dict[int, Set[int]] = defaultdict(set[int])
+def hideRedundant(c1: Clause, c2: Clause) -> None:
+    if(c1.id == c2.id):
+        return
+    if ( isContainedIn(c1, c2) ):
+        hideClause(c2.id)
+    elif ( isContainedIn(c2, c1) ):
+        hideClause(c1.id)
+
+def hideRedundants(c1: Clause, clauses: List[Clause]):
+    for clause in clauses:
+        hideRedundant(clause, c1)
+
+bannedClauses: Set[int] = set()
+def hideClause(id: int):
+    bannedClauses.add(id)
+    for i, clauses in freeCombs.items():
+        if(id in clauses):
+            clauses.remove(id)
+            if(len(clauses) == 0):
+                del freeCombs[i]
+    if(id in freeCombs):
+        del freeCombs[id]
+
+pickedPairs: Dict[int, Set[int]] = defaultdict(Set[int])
 def pickClauses(original: List[Clause], sos: List[Clause]):
     if( len( freeCombs.keys()) == 0 ):
-        print("no match")
-        exit(1)
+        print(f"[CONCLUSION]: {clauseStr(goalClause)} is unknown") # type: ignore
+        exit(0)
 
     index1 = random.choice(list(freeCombs.keys()))
     index2 = freeCombs[index1].pop()
@@ -126,13 +154,12 @@ def pickClauses(original: List[Clause], sos: List[Clause]):
         ca = original[index2]
     else:
         ca = sos[index2 - len(original)]
-
     return ca, sos[index1 - len(original)]
     
 
 
 
-
+goalClause = None
 def main() :
     if (len(sys.argv) != 3):
         raise ValueError("supply alg and filename as arguments")
@@ -141,13 +168,18 @@ def main() :
     
     clauses: List[Clause] = parseInputData(filename)
 
-    for clause in clauses:
-        printClause(clause)
-
+    global goalClause
     goalClause = clauses.pop()
     indexedClauses.pop()    # the original goal clause should never be referenced, only its negations from sos
+    del freeCombs[goalClause.id]
     global clauseCounter
     clauseCounter -= 1
+
+    for clause in clauses:
+        printClause(clause)
+    print("GOAL: ", end="")
+    printClause(goalClause)
+
     ## Set Of Support , Skup potpore
     sos: List[Clause] = negateClause(goalClause)
 
@@ -168,10 +200,15 @@ def main() :
                 finalClause = res[i]
                 print("FOUND NIL, exiting")
                 goalFound = True
+                break
             
             ## maknuti taut
             if(isTautology(r)):
                 res.pop(i)
+                continue
+
+            ## maknuti redundantne
+            hideRedundants(res[i], clauses + sos + res)
 
         ## TODO strategija brisanja, redundantne klauzule
 
@@ -179,12 +216,14 @@ def main() :
             sos.append(r)
             # printClause(r)
 
-    printingClauses = [finalClause]
+    printingClauses = [finalClause] # type: ignore
     while(len(printingClauses) != 0):
         printingClause = printingClauses.pop()
         printClause(printingClause)
         for parent in printingClause.parents:
             printingClauses.append(indexedClauses[parent])
+
+    print(f"[CONCLUSION]: {clauseStr(goalClause)} is true")
         
 
 
